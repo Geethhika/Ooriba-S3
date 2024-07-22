@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "833206345542",
+    "project_id": "ooriba-s3-ad808",
+    "storage_bucket": "ooriba-s3-ad808.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:833206345542:android:46e7b7bca0e5d5a2168f47",
+        "android_client_info": {
+          "package_name": "com.example.ooriba"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "833206345542-7og005i0gkdvukhik8rngochtm8loso0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.exaple.ooriba",
+            "certificate_hash": "95befc97f827852f46eb8322af3720d2aacbd5bf"
+          }
+        },
+        {
+          "client_id": "833206345542-mlvb8euh9l6nivasin2egld92sv5cc6n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkYktmjYyPB_aKRGVTjKLB2aDw0DbJGy4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "833206345542-mlvb8euh9l6nivasin2egld92sv5cc6n.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "833206345542-h7dm8mlrpkrs2kcg4rrvuepb0ifsgtvf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.ooriba"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
