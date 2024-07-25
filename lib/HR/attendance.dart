@@ -1,11 +1,13 @@
 import 'dart:ffi';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:ooriba/HR/monthly_report_service.dart';
 import 'package:ooriba/services/employee_location_service.dart';
-import 'package:ooriba/services/retrieveDataByEmployeeId.dart'; // Updated import
+import 'package:ooriba/services/retrieveDataByEmployeeId.dart';
 import 'package:ooriba/services/retrieveFromDates_service.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,6 +16,7 @@ import 'package:ooriba/services/geo_service.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:ooriba/services/employee_location_service.dart';
+// import 'package:ooriba/HR/monthly_report_service.dart';
 
 class DatePickerButton extends StatefulWidget {
   const DatePickerButton({super.key});
@@ -23,21 +26,46 @@ class DatePickerButton extends StatefulWidget {
 }
 
 class _DatePickerButtonState extends State<DatePickerButton> {
+  final MonthlyReportService _reportService = MonthlyReportService();
   DateTime? _selectedDate;
   Map<String, Map<String, String>> _data = {};
   List<Map<String, dynamic>> _allEmployees = [];
   bool _sortOrder = true;
   String _selectedLocation = 'Berhampur';
   final List<String> _locations = [];
-  // String _selectedLocation = 'Default Location';
-  // final List<String> _locations = ['Default Location'];
+  String? _selectedMonth;
+  List<String> _months = [];
+  List<Map<String, dynamic>> _employeeData = [];
 
   @override
   void initState() {
     super.initState();
     _selectedDate = DateTime.now();
+    _initializeMonths();
     _fetchAllEmployees();
     _fetchData(DateFormat('yyyy-MM-dd').format(_selectedDate!));
+    _loadEmployeeData();
+  }
+
+  void _initializeMonths() {
+    DateTime now = DateTime.now();
+    List<String> allMonths = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
+    ];
+
+    _months = allMonths.sublist(0, now.month);
+    _selectedMonth = _months.isNotEmpty ? _months.last : null;
   }
 
   void _fetchAllEmployees() async {
@@ -76,6 +104,21 @@ class _DatePickerButtonState extends State<DatePickerButton> {
     });
   }
 
+  Future<void> _loadEmployeeData() async {
+    try{
+List<Map<String, dynamic>> data =
+        await _reportService.fetchAllEmployeeData();
+    setState(() {
+      _employeeData = data;
+    });
+    print("_loadingEmployeeData successful");
+    print(_employeeData);
+    }catch(e){
+        print("_loadingEmployeeData issue");
+    }
+    
+  }
+
   void _sortEmployees() {
     _allEmployees.sort((a, b) {
       bool aPresent = _data.containsKey(a['employeeId']);
@@ -91,9 +134,7 @@ class _DatePickerButtonState extends State<DatePickerButton> {
   List<Map<String, dynamic>> _filterEmployeesByLocation() {
     return _allEmployees
         .where((e) =>
-            (e['location'] == _selectedLocation) &&
-            // (_selectedLocation == 'Default Location' || e['location'] == _selectedLocation) &&
-            e['role'] == 'Standard')
+            (e['location'] == _selectedLocation) && e['role'] == 'Standard')
         .toList();
   }
 
@@ -134,7 +175,6 @@ class _DatePickerButtonState extends State<DatePickerButton> {
       csvContent.writeln(
           '$empId,$name,$location,$checkIn,$checkOut,$status,$phoneNo,$Hours');
     }
-
     if (await Permission.storage.request().isGranted ||
         await Permission.manageExternalStorage.request().isGranted) {
       Directory? directory = await getExternalStorageDirectory();
@@ -156,6 +196,64 @@ class _DatePickerButtonState extends State<DatePickerButton> {
         await Permission.manageExternalStorage.isDenied) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Storage permission denied')));
+    } else if (await Permission.storage.isPermanentlyDenied ||
+        await Permission.manageExternalStorage.isPermanentlyDenied) {
+      openAppSettings();
+    }
+  }
+
+  Future<void> _downloadMonthlyCsv() async {
+    List<List<String>> csvData = [
+      [
+        'Employee ID',
+        'Name',
+        'Location',
+        'Joining Date',
+        'Phone No',
+        'Total Working Days',
+        'Working Days',
+        'Leave Count',
+        'Absent'
+      ],
+      ..._employeeData.map((employee) => [
+            employee['employeeId'],
+            employee['name'],
+            employee['location'],
+            employee['joiningDate'],
+            employee['phoneNo'],
+            employee['totalWorkingDays'].toString(),
+            employee['workingDays'].toString(),
+            employee['leaveCount'].toString(),
+            employee['absent'].toString(),
+          ])
+    ];
+
+    String csv = const ListToCsvConverter().convert(csvData);
+
+    if (await Permission.storage.request().isGranted ||
+        await Permission.manageExternalStorage.request().isGranted) {
+      Directory? directory = await getExternalStorageDirectory();
+      String? downloadPath =
+          Platform.isAndroid ? '/storage/emulated/0/Download' : directory?.path;
+
+      if (downloadPath != null) {
+        String path = '$downloadPath/monthly_report.csv';
+        File file = File(path);
+        await file.writeAsString(csv);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV downloaded to $path')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access storage directory')),
+        );
+      }
+    } else if (await Permission.storage.isDenied ||
+        await Permission.manageExternalStorage.isDenied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Storage permission denied')),
+      );
     } else if (await Permission.storage.isPermanentlyDenied ||
         await Permission.manageExternalStorage.isPermanentlyDenied) {
       openAppSettings();
@@ -197,6 +295,19 @@ class _DatePickerButtonState extends State<DatePickerButton> {
             icon: const Icon(Icons.download),
             onPressed: _downloadCsv,
           ),
+          IconButton(
+            icon: const Icon(Icons.download_for_offline),
+            onPressed: _downloadMonthlyCsv,
+          ),
+          IconButton(
+            icon: Icon(_sortOrder ? Icons.arrow_upward : Icons.arrow_downward),
+            onPressed: () {
+              setState(() {
+                _sortOrder = !_sortOrder;
+                _sortEmployees();
+              });
+            },
+          ),
         ],
       ),
       body: Column(
@@ -225,15 +336,20 @@ class _DatePickerButtonState extends State<DatePickerButton> {
                   );
                 }).toList(),
               ),
-              IconButton(
-                icon: Icon(
-                    _sortOrder ? Icons.arrow_upward : Icons.arrow_downward),
-                onPressed: () {
+              DropdownButton<String>(
+                value: _selectedMonth,
+                onChanged: (String? newValue) {
                   setState(() {
-                    _sortOrder = !_sortOrder;
-                    _sortEmployees();
+                    _selectedMonth = newValue!;
                   });
+                  // Add functionality if needed when a month is selected
                 },
+                items: _months.map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
               ),
             ],
           ),
@@ -270,7 +386,6 @@ class _DatePickerButtonState extends State<DatePickerButton> {
                             IconButton(
                               icon: const Icon(Icons.location_on),
                               onPressed: () {
-                                // Add your onPressed functionality here, if needed.
                                 _openLocationOnMap(employeeId);
                               },
                             ),

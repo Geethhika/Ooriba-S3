@@ -18,6 +18,41 @@ class EmployeeLocationService {
     }, SetOptions(merge: true));
   }
 
+  Future<Map<String, int>> getWorkingDays(String month) async {
+    int monthIndex = DateFormat.MMMM().parse(month).month;
+    int year = DateTime.now().year;
+
+    DateTime startDate = DateTime(year, monthIndex, 1);
+    DateTime endDate = DateTime(year, monthIndex + 1, 1).subtract(Duration(days: 1));
+
+    QuerySnapshot querySnapshot = await _firestore
+        .collection('employee_locations')
+        .where('timestamp', isGreaterThanOrEqualTo: startDate)
+        .where('timestamp', isLessThanOrEqualTo: endDate)
+        .get();
+
+    Map<String, int> workingDays = {};
+
+    for (var doc in querySnapshot.docs) {
+      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+      data.forEach((employeeId, locations) {
+        if (locations is List) {
+          for (var location in locations) {
+            if (location['type'] == 'check-in') {
+              if (!workingDays.containsKey(employeeId)) {
+                workingDays[employeeId] = 0;
+              }
+              workingDays[employeeId] = workingDays[employeeId]! + 1;
+              break;
+            }
+          }
+        }
+      });
+    }
+
+    return workingDays;
+  }
+
   Future<Map<String, dynamic>> fetchEmployeeCoordinates(String employeeId) async {
     String todayDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
     DocumentSnapshot snapshot = await _firestore.collection('employee_locations').doc(todayDate).get();
@@ -33,3 +68,6 @@ class EmployeeLocationService {
     throw 'No location data found for the employee';
   }
 }
+
+
+

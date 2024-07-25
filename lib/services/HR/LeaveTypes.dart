@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 class LeaveTypesService {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final CollectionReference _leaveTypesCollection =
       FirebaseFirestore.instance.collection('LeaveTypes');
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -15,37 +17,6 @@ class LeaveTypesService {
     } catch (e) {
       print('Error fetching leave types: $e');
       return [];
-    }
-  }
-
-  // Fetch detailed leave types with employee IDs and numbers
-  Future<Map<String, Map<String, int>>> fetchDetailedLeaveTypes() async {
-    try {
-      QuerySnapshot snapshot = await _leaveTypesCollection.get();
-      Map<String, Map<String, int>> leaveTypesDetails = {};
-
-      for (var doc in snapshot.docs) {
-        String leaveType = doc.id;
-        Map<String, int> employeeLeaveData = {};
-
-        // Check if the document data is not null
-        Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
-        if (data != null) {
-          data.forEach((key, value) {
-            // Assuming value is an integer representing the number of leave days
-            if (value is int) {
-              employeeLeaveData[key] = value;
-            }
-          });
-        }
-
-        leaveTypesDetails[leaveType] = employeeLeaveData;
-      }
-
-      return leaveTypesDetails;
-    } catch (e) {
-      print('Error fetching detailed leave types: $e');
-      return {};
     }
   }
 
@@ -69,73 +40,63 @@ class LeaveTypesService {
     }
   }
 
-  Future<DocumentSnapshot> fetchSickLeaveData() async {
-    return await _db.collection('LeaveTypes').doc('Sick Leave').get();
-  }
+  Future<List<Map<String, dynamic>>?> fetchLeaveByDate(
+      String employeeId, String fromDateStr, String toDateStr) async {
+  try {
+    QuerySnapshot querySnapshot = await _firestore
+        .collection('leave')
+        .doc('accept')
+        .collection(employeeId)
+        .where(FieldPath.documentId,
+            isGreaterThanOrEqualTo: fromDateStr)
+        .where(FieldPath.documentId,
+            isLessThanOrEqualTo: toDateStr)
+        .get();
 
-  Future<bool> canRequestSickLeave(String employeeId) async {
-    try {
-      DocumentSnapshot doc = await fetchSickLeaveData();
-
-      if (doc.exists) {
-        Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
-        if (data != null && data.containsKey(employeeId)) {
-          int numberOfDays = data[employeeId];
-          return numberOfDays <
-              4; // Assuming 4 is the maximum allowed sick leave days
-        } else {
-          // If no data is found for the employee, treat numberOfDays as 0
-          return true;
-        }
-      } else {
-        // If the 'Sick Leave' document does not exist, allow the request
-        return true;
-      }
-    } catch (e) {
-      print('Error checking sick leave request: $e');
-      return false;
+    if (querySnapshot.docs.isNotEmpty) {
+      return querySnapshot.docs
+          .map((doc) => doc.data() as Map<String, dynamic>)
+          .toList();
+    } else {
+      return null;
     }
+  } catch (e) {
+    print(e);
+    return null;
   }
+}
 
-  // Calculate eligible earned leave days
-  Future<int> calculateEligibleEarnedLeave(String employeeId) async {
+
+  // Fetch leave data for a specific year and employee
+  Future<Map<String, dynamic>> getLeaveData(
+      String employeeId, String leaveType) async {
     try {
-      // Fetch employee data
-      Map<String, dynamic>? employeeData = await getEmployeeById(employeeId);
-      if (employeeData == null) {
-        throw 'Employee data not found';
+      String currentYear = DateFormat('yyyy').format(DateTime.now());
+      DocumentReference leaveDoc = _leaveTypesCollection
+          .doc(leaveType)
+          .collection(currentYear)
+          .doc(employeeId);
+
+      DocumentSnapshot snapshot = await leaveDoc.get();
+
+      int leavesTaken = 0;
+      if (snapshot.exists && snapshot.data() != null) {
+        leavesTaken =
+            (snapshot.data() as Map<String, dynamic>)['leavesTaken'] ?? 0;
       }
 
-      // Get joining date
-      String joiningDateString = employeeData['joiningDate'];
-      DateTime joiningDate = DateFormat('dd/MM/yyyy').parse(joiningDateString);
+      int balance = 4 - leavesTaken;
 
-      // Calculate the number of eligible leave days based on joining date
-      DateTime currentDate = DateTime.now();
-      int monthsDifference = ((currentDate.year - joiningDate.year) * 12) +
-          currentDate.month -
-          joiningDate.month;
-      int totalEligibleLeaveDays = monthsDifference;
-
-      // Fetch the number of leaves already taken
-      DocumentSnapshot doc =
-          await _db.collection('LeaveTypes').doc('Earned Leave').get();
-      int takenLeaveDays = 0;
-      if (doc.exists) {
-        Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
-        if (data != null && data.containsKey(employeeId)) {
-          // Retrieve the number of days taken from the document
-          takenLeaveDays = data[employeeId]['numberOfDays'] ?? 0;
-        }
-      }
-
-      // Calculate the remaining eligible leave days
-      int remainingLeaveDays = totalEligibleLeaveDays - takenLeaveDays;
-
-      return remainingLeaveDays;
+      return {
+        'leavesTaken': leavesTaken,
+        'balance': balance,
+      };
     } catch (e) {
-      print('Error calculating eligible earned leave: $e');
-      return 0;
+      print('Error fetching leave data: $e');
+      return {
+        'leavesTaken': 0,
+        'balance': 4,
+      };
     }
   }
 }

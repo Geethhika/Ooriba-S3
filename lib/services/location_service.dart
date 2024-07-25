@@ -84,4 +84,45 @@ class LocationService {
 
     return distance <= restrictedRadius;
   }
+  Future<Map<String, int>> getTotalWorkingDays(String month) async {
+    try {
+      QuerySnapshot querySnapshot = await _firestore
+          .collection('employee_working_days')
+          .where('month', isEqualTo: month)
+          .get();
+
+      Map<String, int> workingDays = {};
+      for (var doc in querySnapshot.docs) {
+        String empId = doc['employeeId'];
+        int days = doc['workingDays'];
+        workingDays[empId] = days;
+      }
+      return workingDays;
+    } catch (e) {
+      print('Error fetching total working days: $e');
+      return {};
+    }
+  }
+
+  // Fetch total working days for each employee from Firebase
+  Future<Map<String, int>> getEmployeeWorkedDays(String month) async {
+    try {
+      QuerySnapshot querySnapshot = await _firestore
+          .collection('employee_attendance')
+          .where('month', isEqualTo: month)
+          .get();
+
+      Map<String, int> workedDays = {};
+      for (var doc in querySnapshot.docs) {
+        String empId = doc['employeeId'];
+        int days = doc['workedDays'];
+        workedDays[empId] = days;
+      }
+      return workedDays;
+    } catch (e) {
+      print('Error fetching employee worked days: $e');
+      return {};
+    }
+  }
 }
+

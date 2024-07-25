@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:ooriba/services/admin/retrieveLocation_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -193,10 +194,11 @@ class _EmployeeDetailsDialogState extends State<EmployeeDetailsDialog> {
   final Map<String, String> _validationErrors = {};
   final DesignationService _designationService = DesignationService();
   final DepartmentService _departmentService = DepartmentService();
+  final LocationService _locationService = LocationService();
 
   List<String> _departments = [];
   List<String> _designations = [];
-
+  List<String> _locations = [];
   @override
   void initState() {
     super.initState();
@@ -241,9 +243,11 @@ class _EmployeeDetailsDialogState extends State<EmployeeDetailsDialog> {
   Future<void> _fetchData() async {
     final departments = await _departmentService.getDepartments();
     final designations = await _designationService.getDesignations();
+    final locations = await _locationService.getAllLocations();
     setState(() {
       _departments = departments;
       _designations = designations;
+      _locations = locations;
     });
   }
 
@@ -426,22 +430,10 @@ class _EmployeeDetailsDialogState extends State<EmployeeDetailsDialog> {
               _buildRow('Bank Name', _bankNameController),
               _buildRow('Account Number', _accountNumberController),
               _buildRow('IFSC Code', _ifscCodeController),
-              _buildDropdown('Department', _selectedDepartment, [
-                'Sales',
-                'Services',
-                'Spares',
-                'Administration',
-                'Board of Directors'
-              ]),
-              _buildDropdown('Designation', _selectedDesignation, [
-                'Manager',
-                'Senior Engineer',
-                'Junior Engineer',
-                'Technician',
-                'Executive'
-              ]),
-              _buildDropdown('Location', _selectedLocation,
-                  ['Jeypore', 'Berhampur', 'Rayagada']),
+              _buildDropdown('Department', _selectedDepartment, _departments),
+              _buildDropdown(
+                  'Designation', _selectedDesignation, _designations),
+              _buildDropdown('Location', _selectedLocation, _locations),
               _buildDropdown('Status', _selectedStatus, ['Active', 'Inactive']),
               _buildDropdown(
                   'Role', _selectedRole, ['Standard', 'HR', 'SiteManager']),

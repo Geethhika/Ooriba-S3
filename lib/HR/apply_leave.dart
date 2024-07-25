@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ooriba/services/HR/leaveTypes.dart';
+import 'package:ooriba/services/HR/LeaveTypes.dart';
 
 class ApplyLeavePage extends StatefulWidget {
   @override
@@ -29,6 +29,7 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
 
   List<Map<String, dynamic>> searchResults = [];
   bool showSearchResults = false;
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +87,41 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
     }
   }
 
+  Future<Map<String, dynamic>?> getEmployeeById(String employeeId) async {
+    try {
+      QuerySnapshot snapshot = await _firestore
+          .collection('Regemp')
+          .where('employeeId', isEqualTo: employeeId)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        return snapshot.docs.first.data() as Map<String, dynamic>;
+      } else {
+        return null;
+      }
+    } catch (e) {
+      print(e);
+      return null;
+    }
+  }
+
+  int calculateEarnedLeaveDays(DateTime joiningDate) {
+    DateTime currentDate = DateTime.now();
+
+    // Adjust joining date if not in the current year
+    if (joiningDate.year != currentDate.year) {
+      joiningDate = DateTime(currentDate.year, 1, 1);
+    }
+
+    int monthsWorked = ((currentDate.year - joiningDate.year) * 12 +
+            currentDate.month -
+            joiningDate.month)
+        .clamp(0, double.infinity)
+        .toInt();
+    return monthsWorked;
+  }
+
   Future<void> applyLeave({
     required String employeeId,
     required String leaveType,
@@ -97,6 +133,78 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
     try {
       String fromDateStr =
           fromDate != null ? fromDate.toIso8601String().split('T').first : '';
+      String currentYear = DateTime.now().year.toString();
+
+      if (leaveType == 'Sick Leave') {
+        DocumentSnapshot leaveTypeDoc = await _firestore
+            .collection('LeaveTypes')
+            .doc('Sick Leave')
+            .collection(currentYear)
+            .doc(employeeId)
+            .get();
+
+        double maxLeave = 4.0; // Default max leave for sick leave
+        Map<String, dynamic>? leaveData =
+            leaveTypeDoc.data() as Map<String, dynamic>?;
+
+        if (leaveData != null && leaveData.containsKey('maxLeave')) {
+          maxLeave = leaveData['maxLeave'];
+        }
+
+        if (numberOfDays > maxLeave) {
+          throw Exception('Insufficient sick leave balance');
+        }
+
+        // Subtract the number of days from max leave
+        maxLeave -= numberOfDays;
+
+        await _firestore
+            .collection('LeaveTypes')
+            .doc('Sick Leave')
+            .collection(currentYear)
+            .doc(employeeId)
+            .set({
+          'maxLeave': maxLeave,
+          'leaveTaken': FieldValue.increment(numberOfDays),
+        }, SetOptions(merge: true));
+      } else if (leaveType == 'Earned Leave') {
+        Map<String, dynamic>? employeeData = await getEmployeeById(employeeId);
+        if (employeeData == null) {
+          throw Exception('Employee not found');
+        }
+
+        DateFormat dateFormat = DateFormat('dd/MM/yyyy');
+        DateTime joiningDate = dateFormat.parse(employeeData['joiningDate']);
+        int earnedLeaveDays = calculateEarnedLeaveDays(joiningDate);
+
+        DocumentSnapshot leaveTypeDoc = await _firestore
+            .collection('LeaveTypes')
+            .doc('Earned Leave')
+            .collection(currentYear)
+            .doc(employeeId)
+            .get();
+
+        double leavesTaken = 0.0;
+        Map<String, dynamic>? leaveData =
+            leaveTypeDoc.data() as Map<String, dynamic>?;
+
+        if (leaveData != null && leaveData.containsKey('leavesTaken')) {
+          leavesTaken = leaveData['leavesTaken'];
+        }
+
+        if ((earnedLeaveDays - leavesTaken) < numberOfDays) {
+          throw Exception('Insufficient earned leave balance');
+        }
+
+        await _firestore
+            .collection('LeaveTypes')
+            .doc('Earned Leave')
+            .collection(currentYear)
+            .doc(employeeId)
+            .set({
+          'leavesTaken': FieldValue.increment(numberOfDays),
+        }, SetOptions(merge: true));
+      }
 
       await _firestore
           .collection('leave')
@@ -114,7 +222,6 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
         'count': FieldValue.increment(1), // Increment the leave count
       });
 
-      // Increment the leave count for the employee in LeaveCount collection
       await _firestore.collection('LeaveCount').doc(employeeId).set({
         'fromDate': fromDate,
         'count': FieldValue.increment(1), // Increment count
@@ -178,6 +285,49 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
     }
   }
 
+  Future<void> _showLeaveDetails() async {
+  String employeeId = employeeIdController.text;
+  String fromDateStr = fromDateController.text;
+  String toDateStr = toDateController.text;
+
+  if (employeeId.isNotEmpty &&
+      fromDateStr.isNotEmpty &&
+      toDateStr.isNotEmpty) {
+    try {
+      DateTime fromDate = dateFormat.parse(fromDateStr);
+      DateTime toDate = dateFormat.parse(toDateStr);
+
+      String fromDateFormatted = dateFormat.format(fromDate);
+      String toDateFormatted = dateFormat.format(toDate);
+
+      List<Map<String, dynamic>>? details = await _leaveTypesService
+          .fetchLeaveByDate(employeeId, fromDateFormatted, toDateFormatted);
+
+      if (details != null && details.isNotEmpty) {
+        setState(() {
+          leaveDetails = details as Map<String, dynamic>?;
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text('No leave details found for the specified dates.')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error fetching leave details: $e')),
+      );
+    }
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text('Please enter employee ID, from date, and to date.')),
+    );
+  }
+}
+
+
   Widget _buildLabelWithStar(String label) {
     return RichText(
       text: TextSpan(
@@ -188,34 +338,6 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
             text: ' *',
             style: TextStyle(color: Colors.red),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLeaveDetails() {
-    if (leaveDetails == null) {
-      return Container(); // Empty container if no leave details found
-    }
-
-    return Container(
-      margin: EdgeInsets.symmetric(vertical: 10.0),
-      padding: EdgeInsets.all(10.0),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
-        borderRadius: BorderRadius.circular(8.0),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Employee ID: ${leaveDetails!['employeeId']}'),
-          Text('Leave Type: ${leaveDetails!['leaveType']}'),
-          Text(
-              'From Date: ${dateFormat.format((leaveDetails!['fromDate'] as Timestamp).toDate())}'),
-          Text(
-              'To Date: ${dateFormat.format((leaveDetails!['toDate'] as Timestamp).toDate())}'),
-          Text('Number of Days: ${leaveDetails!['numberOfDays']}'),
-          Text('Leave Reason: ${leaveDetails!['leaveReason']}'),
         ],
       ),
     );
@@ -247,14 +369,13 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Leave Application'),
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        appBar: AppBar(
+          title: Text('Leave Application'),
+        ),
+        body: SingleChildScrollView(
+          padding: EdgeInsets.all(16.0),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             TextFormField(
               controller: employeeIdSearchController,
               decoration: InputDecoration(
@@ -453,31 +574,36 @@ class _ApplyLeavePageState extends State<ApplyLeavePage> {
                       },
                       child: Text('Apply Leave'),
                     ),
-                    // SizedBox(height: 20.0),
-                    // FutureBuilder<Map<String, dynamic>?>(
-                    //   future: fetchAcceptedLeaveDetails(employeeIdController.text),
-                    //   builder: (context, snapshot) {
-                    //     if (snapshot.connectionState == ConnectionState.waiting) {
-                    //       return CircularProgressIndicator();
-                    //     }
-                    //     if (snapshot.hasError) {
-                    //       return Text('Error: ${snapshot.error}');
-                    //     }
-                    //     if (snapshot.hasData && snapshot.data != null) {
-                    //       leaveDetails = snapshot.data!;
-                    //       return _buildLeaveDetails();
-                    //     } else {
-                    //       return Text('No accepted leave details found.');
-                    //     }
-                    //   },
-                    // ),
+                    SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _showLeaveDetails,
+                      child: Text('Details'),
+                    ),
+                    if (leaveDetails != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 20.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Leave Details:',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text('Employee ID: ${leaveDetails!['employeeId']}'),
+                            Text('Leave Type: ${leaveDetails!['leaveType']}'),
+                            Text(
+                                'From Date: ${dateFormat.format((leaveDetails!['fromDate'] as Timestamp).toDate())}'),
+                            Text(
+                                'To Date: ${dateFormat.format((leaveDetails!['toDate'] as Timestamp).toDate())}'),
+                            Text(
+                                'Number of Days: ${leaveDetails!['numberOfDays']}'),
+                            Text('Reason: ${leaveDetails!['leaveReason']}'),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
-            ],
-          ],
-        ),
-      ),
-    );
+            ]
+          ]),
+        ));
   }
 }
