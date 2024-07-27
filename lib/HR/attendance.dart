@@ -105,19 +105,19 @@ class _DatePickerButtonState extends State<DatePickerButton> {
   }
 
   Future<void> _loadEmployeeData() async {
-    try{
-List<Map<String, dynamic>> data =
-        await _reportService.fetchAllEmployeeData();
+  try {
+    String yearMonth = DateFormat('yyyy-MM').format(DateTime.now().subtract(Duration(days: 30)));
+    List<Map<String, dynamic>> data = await _reportService.fetchAllEmployeeData(yearMonth);
     setState(() {
       _employeeData = data;
     });
     print("_loadingEmployeeData successful");
     print(_employeeData);
-    }catch(e){
-        print("_loadingEmployeeData issue");
-    }
-    
+  } catch (e) {
+    print("_loadingEmployeeData issue: $e");
   }
+}
+
 
   void _sortEmployees() {
     _allEmployees.sort((a, b) {
@@ -203,62 +203,66 @@ List<Map<String, dynamic>> data =
   }
 
   Future<void> _downloadMonthlyCsv() async {
-    List<List<String>> csvData = [
-      [
-        'Employee ID',
-        'Name',
-        'Location',
-        'Joining Date',
-        'Phone No',
-        'Total Working Days',
-        'Working Days',
-        'Leave Count',
-        'Absent'
-      ],
-      ..._employeeData.map((employee) => [
-            employee['employeeId'],
-            employee['name'],
-            employee['location'],
-            employee['joiningDate'],
-            employee['phoneNo'],
-            employee['totalWorkingDays'].toString(),
-            employee['workingDays'].toString(),
-            employee['leaveCount'].toString(),
-            employee['absent'].toString(),
-          ])
-    ];
+  String yearMonth = DateFormat('yyyy-MM').format(DateTime.now().subtract(Duration(days: 30)));
+  MonthlyReportService reportService = MonthlyReportService();
+  List<Map<String, dynamic>> _employeeData = await reportService.fetchAllEmployeeData(yearMonth);
 
-    String csv = const ListToCsvConverter().convert(csvData);
+  List<List<String>> csvData = [
+    [
+      'Employee ID',
+      'Name',
+      'Location',
+      'Joining Date',
+      'Phone No',
+      'Total Working Days',
+      'Working Days',
+      'Leave Count',
+      'Absent'
+    ],
+    ..._employeeData.map((employee) => [
+          employee['employeeId'],
+          employee['name'],
+          employee['location'],
+          employee['joiningDate'],
+          employee['phoneNo'],
+          employee['totalWorkingDays'].toString(),
+          employee['workingDays'].toString(),
+          employee['leaveCount'].toString(),
+          employee['absent'].toString(),
+        ])
+  ];
 
-    if (await Permission.storage.request().isGranted ||
-        await Permission.manageExternalStorage.request().isGranted) {
-      Directory? directory = await getExternalStorageDirectory();
-      String? downloadPath =
-          Platform.isAndroid ? '/storage/emulated/0/Download' : directory?.path;
+  String csv = const ListToCsvConverter().convert(csvData);
 
-      if (downloadPath != null) {
-        String path = '$downloadPath/monthly_report.csv';
-        File file = File(path);
-        await file.writeAsString(csv);
+  if (await Permission.storage.request().isGranted ||
+      await Permission.manageExternalStorage.request().isGranted) {
+    Directory? directory = await getExternalStorageDirectory();
+    String? downloadPath =
+        Platform.isAndroid ? '/storage/emulated/0/Download' : directory?.path;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('CSV downloaded to $path')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to access storage directory')),
-        );
-      }
-    } else if (await Permission.storage.isDenied ||
-        await Permission.manageExternalStorage.isDenied) {
+    if (downloadPath != null) {
+      String path = '$downloadPath/monthly_report_${yearMonth}.csv';
+      File file = File(path);
+      await file.writeAsString(csv);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Storage permission denied')),
+        SnackBar(content: Text('CSV downloaded to $path')),
       );
-    } else if (await Permission.storage.isPermanentlyDenied ||
-        await Permission.manageExternalStorage.isPermanentlyDenied) {
-      openAppSettings();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to access storage directory')),
+      );
     }
+  } else if (await Permission.storage.isDenied ||
+      await Permission.manageExternalStorage.isDenied) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Storage permission denied')),
+    );
+  } else if (await Permission.storage.isPermanentlyDenied ||
+      await Permission.manageExternalStorage.isPermanentlyDenied) {
+    openAppSettings();
   }
+}
 
   void _openLocationOnMap(String employeeId) async {
     try {
@@ -292,13 +296,43 @@ List<Map<String, dynamic>> data =
         title: const Text('Attendance Page'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _downloadCsv,
+            icon: Container(
+            padding: EdgeInsets.all(14.0),
+            decoration: BoxDecoration(
+              color: Color.fromARGB(255, 215, 212, 212), // Background color
+              borderRadius: BorderRadius.circular(20.0), // Rounded corners
+            ),
+            child: const Text(
+              'D',
+              style: TextStyle(
+                color: Color.fromARGB(255, 15, 15, 15), // Text color
+                fontWeight: FontWeight.bold, // Text style
+                fontSize: 10.0, // Text size
+              ),
+            ),
           ),
+          onPressed: _downloadCsv,
+        ),
+
           IconButton(
-            icon: const Icon(Icons.download_for_offline),
+            icon: Container(
+              padding: EdgeInsets.all(14.0),
+              decoration: BoxDecoration(
+                color: Color.fromARGB(255, 215, 212, 212), // Background color
+                borderRadius: BorderRadius.circular(20.0), // Rounded corners
+              ),
+              child: const Text(
+                'M',
+                style: TextStyle(
+                  color: Color.fromARGB(255, 15, 15, 15), // Text color
+                  fontWeight: FontWeight.bold, // Text style
+                  fontSize: 10.0, // Text size
+                ),
+              ),
+            ),
             onPressed: _downloadMonthlyCsv,
           ),
+          
           IconButton(
             icon: Icon(_sortOrder ? Icons.arrow_upward : Icons.arrow_downward),
             onPressed: () {
